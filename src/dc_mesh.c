@@ -683,15 +683,14 @@ static void dcDrawSubmesh(DCSubmesh* sm, Material material, Matrix transform) {
      * Layout matches GLdc fast-path requirements:
      *   vertex:  3 x GL_FLOAT
      *   uv:      2 x GL_FLOAT
-     *   color:   GL_BGRA x GL_UNSIGNED_BYTE */
+     *   color:   fixed-function current color (no array; set via rlColor4ub) */
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
 
     glVertexPointer(3, GL_FLOAT, stride, &buf[0].x);
     glTexCoordPointer(2, GL_FLOAT, stride, &buf[0].u);
-    glColorPointer(GL_BGRA, GL_UNSIGNED_BYTE, stride, &buf[0].color);
 
     /* Push model transform */
     rlPushMatrix();
