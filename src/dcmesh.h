@@ -84,6 +84,11 @@ typedef struct {
     DCVertex *vertices;         /* Allocated vertex array */
     DCStrip  *strips;           /* Allocated strip array */
     uint16_t *vertex_map;       /* Maps strip vertex -> original vertex index */
+    /* Runtime-only tint scratch (not serialized): base colors * material tint,
+       used to keep the color array bound so GLdc stays on its fast path. */
+    uint32_t *tint_colors;
+    uint32_t last_tint;
+    int tint_valid;
 } DCSubmesh;
 
 /* -------------------------------------------------------------------

@@ -234,6 +234,7 @@ fail:
         free(data->submeshes[i].vertices);
         free(data->submeshes[i].strips);
         free(data->submeshes[i].vertex_map);
+        free(data->submeshes[i].tint_colors);
     }
     free(data->submeshes);
     free(data);
@@ -248,6 +249,7 @@ static void dcFreeData(DCMeshData* data) {
         free(data->submeshes[i].vertices);
         free(data->submeshes[i].strips);
         free(data->submeshes[i].vertex_map);
+        free(data->submeshes[i].tint_colors);
     }
     free(data->submeshes);
     free(data);
@@ -535,6 +537,28 @@ static void dcBatchFillTintColors(DCMeshBatchCache *cache, Color tint) {
     }
 }
 
+/* Per-submesh analogue of dcBatchFillTintColors for the single-draw strip
+   path: fills sm->tint_colors with base colors * material tint. */
+static void dcSubmeshFillTintColors(DCSubmesh *sm, Color tint) {
+    uint32_t packed = ((uint32_t)tint.r << 24) | ((uint32_t)tint.g << 16) |
+                      ((uint32_t)tint.b << 8) | (uint32_t)tint.a;
+    if (sm->tint_valid && sm->last_tint == packed) return;
+    if (!sm->tint_colors) {
+        sm->tint_colors = (uint32_t *)malloc(sm->vertex_count * sizeof(uint32_t));
+        if (!sm->tint_colors) return;
+    }
+    sm->last_tint = packed;
+    sm->tint_valid = 1;
+    for (uint32_t i = 0; i < sm->vertex_count; i++) {
+        const unsigned char *src = (const unsigned char *)&sm->vertices[i].color;
+        unsigned char *dst = (unsigned char *)&sm->tint_colors[i];
+        dst[0] = (unsigned char)(((unsigned int)src[0] * tint.b) / 255);
+        dst[1] = (unsigned char)(((unsigned int)src[1] * tint.g) / 255);
+        dst[2] = (unsigned char)(((unsigned int)src[2] * tint.r) / 255);
+        dst[3] = (unsigned char)(((unsigned int)src[3] * tint.a) / 255);
+    }
+}
+
 /* -------------------------------------------------------------------
  * Public API: Explicit one-setup batch draw for repeated instances
  * ---------------------------------------------------------------- */
@@ -683,24 +707,28 @@ static void dcDrawSubmesh(DCSubmesh* sm, Material material, Matrix transform) {
      * Layout matches GLdc fast-path requirements:
      *   vertex:  3 x GL_FLOAT
      *   uv:      2 x GL_FLOAT
-     *   color:   fixed-function current color (no array; set via rlColor4ub) */
+     *   color:   GL_BGRA x GL_UNSIGNED_BYTE (base or material-tinted) */
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    glDisableClientState(GL_COLOR_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
 
     glVertexPointer(3, GL_FLOAT, stride, &buf[0].x);
     glTexCoordPointer(2, GL_FLOAT, stride, &buf[0].u);
 
+    /* Apply the material tint to the strip colors via a per-submesh tint
+       buffer, keeping the color array bound so GLdc stays on its fast path. */
+    Color tint = material.maps[MATERIAL_MAP_DIFFUSE].color;
+    if (tint.r != 255 || tint.g != 255 || tint.b != 255 || tint.a != 255) {
+        dcSubmeshFillTintColors(sm, tint);
+        glColorPointer(GL_BGRA, GL_UNSIGNED_BYTE, 0, sm->tint_colors);
+    } else {
+        glColorPointer(GL_BGRA, GL_UNSIGNED_BYTE, stride, &buf[0].color);
+    }
+
     /* Push model transform */
     rlPushMatrix();
     rlMultMatrixf(MatrixToFloat(transform));
-
-    /* Set material tint color */
-    rlColor4ub(material.maps[MATERIAL_MAP_DIFFUSE].color.r,
-               material.maps[MATERIAL_MAP_DIFFUSE].color.g,
-               material.maps[MATERIAL_MAP_DIFFUSE].color.b,
-               material.maps[MATERIAL_MAP_DIFFUSE].color.a);
 
     /* Submit all strips in ONE GLdc call (glKosDrawMultiStrips): the old
      * per-strip glDrawArrays loop paid list bookkeeping + a full XMTRX MVP
