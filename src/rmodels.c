@@ -1580,7 +1580,11 @@ void DrawMesh(Mesh mesh, Material material, Matrix transform)
     }
     if (mesh.colors != NULL) {
         glEnableClientState(GL_COLOR_ARRAY);
-        glColorPointer(GL_BGRA, GL_UNSIGNED_BYTE, 0, mesh.colors);
+        // raylib stores mesh.colors as RGBA. Declaring GL_BGRA here makes
+        // GLdc take its verbatim-copy fast path and swap R/B (red blood renders
+        // blue). Pass size=4 so GLdc reorders RGBA into its internal BGRA
+        // vertex layout instead.
+        glColorPointer(4, GL_UNSIGNED_BYTE, 0, mesh.colors);
     }
 #else
     rlEnableStatePointer(GL_VERTEX_ARRAY, mesh.vertices);
